@@ -21,7 +21,7 @@ namespace UnUnShipper
         }
 
         public async Task AttemptReconstruction(UnshippedBuild model)
-        {          
+        {
             Directory.CreateDirectory(Consts.TempDir);
 
             if (!await DownloadFile(model.Encoding, Helpers.GetTempPath(model.Encoding)))
@@ -41,8 +41,6 @@ namespace UnUnShipper
             var eSize = blte.Length;
             var ecSize = fs.Length;
             var encoding = new EncodingFile(blte);
-            blte.Close();
-            fs.Close();
 
             // extract all binaries
             await ExtractFiles(model, encoding);
@@ -52,7 +50,7 @@ namespace UnUnShipper
                 await DownloadFile(model.Root, Helpers.GetTempPath(model.Root));
 
             // generate buildconfig
-            ConfigGenerator.BuildConfig(model, encoding, eSize, ecSize);            
+            ConfigGenerator.BuildConfig(model, encoding, eSize, ecSize);
 
             Directory.Move(Consts.TempDir, model.GetDirectoryName());
             Console.WriteLine($"{model.Encoding} moved to {model.GetDirectoryName()}");
@@ -112,20 +110,27 @@ namespace UnUnShipper
                 {
                     if (await DownloadFile(ekey.ToString(), filepath))
                     {
-                        // decode file, using swap temp to avoid rw conflicts
-                        BlockTableEncoder.DecodeAndExport(filepath, filepath + "_temp");
-                        File.Copy(filepath + "_temp", filepath, true);
-                        File.Delete(filepath + "_temp");
-
-                        if (file.FilePath.EndsWith(".exe"))
+                        try
                         {
-                            model.Build ??= FileVersionInfo.GetVersionInfo(filepath).FileVersion;
+                            // decode file, using swap temp to avoid rw conflicts
+                            BlockTableEncoder.DecodeAndExport(filepath, filepath + "_temp");
+                            File.Copy(filepath + "_temp", filepath, true);
+                        }
+                        finally
+                        {
+                            File.Delete(filepath + "_temp");
+                        }
+
+                        // extract build info
+                        if (file.FilePath.EndsWith(".exe") && File.Exists(filepath))
+                        {
+                            model.Build ??= FileVersionInfo.GetVersionInfo(filepath)?.FileVersion;
                             model.Product ??= Helpers.GetProductType(file.FilePath);
                         }
 
                         break;
                     }
-                }                
+                }
             }
         }
 
