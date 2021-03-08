@@ -20,9 +20,9 @@ namespace UnUnShipper
         private readonly HashSet<string> KnownSystemFiles;
         private readonly Regex ModalRegex = new(@"fillVersionModal\((\d+)\)");
 
-        public WoWToolsScraper(int limit = 100)
+        public WoWToolsScraper(int limit)
         {
-            Limit = limit;
+            Limit = Math.Max(limit, 1);
             Client = new WebClient();
             Builds = new List<WoWBuild>(0x100);
             KnownSystemFiles = new HashSet<string>(0x200);
@@ -40,12 +40,15 @@ namespace UnUnShipper
             var modalIds = modals
                 .Select(x => int.Parse(x.Groups[1].Value))
                 .OrderByDescending(x => x)
-                .Take(Limit)
+                .Take(Limit + 30) // hardcoded look behind limit
                 .ToArray();
 
             var doc = new HtmlDocument();
             for (var i = 0; i < modalIds.Length; i++)
                 Builds.Add(await ScrapeBuild(modalIds[i], doc));
+
+            // sort newest to oldest
+            Builds.Sort((x, y) => -x.CompiledAt.CompareTo(y.CompiledAt));
         }
 
         public UnshippedBuild[] GetUnshippedBuilds()
@@ -53,23 +56,20 @@ namespace UnUnShipper
             var results = new HashSet<UnshippedBuild>();
             var wanted = DateTime.Now.AddMonths(-2);
 
-            foreach (var build in Builds)
+            for(var i = 0; i < Limit && i < Builds.Count; i++)
             {
-                // basic check to limit results to recent builds
-                if (build.CompiledAt < wanted)
-                    continue;
-
+                var build = Builds[i];
                 var count = build.PatchConfig?.GetValues("encoding")?.Count ?? 0;
 
                 // skip the current patch details
-                for (var i = 5; i < count; i += 4)
+                for (var j = 5; j < count; j += 4)
                 {
                     var model = new UnshippedBuild
                     {
-                        Encoding = build.PatchConfig.GetValue("encoding", i),
-                        Install = build.PatchConfig.GetValue("install", i),
-                        Download = build.PatchConfig.GetValue("download", i),
-                        Size = build.PatchConfig.GetValue("size", i)
+                        Encoding = build.PatchConfig.GetValue("encoding", j),
+                        Install = build.PatchConfig.GetValue("install", j),
+                        Download = build.PatchConfig.GetValue("download", j),
+                        Size = build.PatchConfig.GetValue("size", j)
                     };
 
                     // check atleast one file is unshipped
